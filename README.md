@@ -127,33 +127,58 @@ Swagger UI: `http://localhost:8080/swagger-ui/index.html`
 
 ---
 
-## Backend Update Workflow
+## Reviewed Updates (Post Frontend Build)
 
-This repository contains a frontend folder (`splitwise-frontend/`) but backend changes are the primary focus here.
+This section summarizes the major logic and behavior updates currently implemented after frontend integration and review.
 
-### Keep frontend files out of backend commits
+### Backend Logic Updates
 
-The frontend folder is ignored in `.gitignore`:
+- Group delete authorization is enforced: only the group creator can delete a group.
+- Group deletion performs cleanup of related data (group members, expenses, expense splits, settlements).
+- Group members API added: `GET /api/v1/groups/{groupId}/members`.
+- Group delete API added: `DELETE /api/v1/groups/{groupId}?requesterUserId={id}`.
+- Expense creation is now tied to authenticated user context (requester email from auth token).
+- Only group members can add expenses.
+- Payer must be a member of the target group.
+- Split logic enhanced:
+  - `EQUAL` auto-splits across all group members.
+  - `PERCENTAGE` validates total is exactly `100` and allocates amounts with rounding-safe distribution.
+  - `SHARES` validates positive shares and allocates amounts by share weights.
+  - Duplicate split users are rejected.
+  - Non-member split users are rejected.
+- Expense deletion authorization added: only expense creator or group creator can delete an expense.
+- Expense delete API added: `DELETE /api/v1/expenses/{expenseId}`.
+- Settlement authorization tightened: only payer or receiver can perform settle-up.
+- Settlement amount validation ensures amount matches payer pending balance in that group.
+- Dashboard API added: `GET /api/v1/dashboard/me` with:
+  - total paid,
+  - total owes,
+  - group-wise net summary,
+  - person-to-person net balances.
 
-- `splitwise-frontend/`
-- `splitwise_frontend/`
+### Frontend + Behavior Updates
 
-### Commit backend-only updates
-
-Use these commands when you want to push backend changes only:
-
-```bash
-git add .gitignore src pom.xml mvnw mvnw.cmd README.md
-git commit -m "feat: backend update"
-git push
-```
-
-If you accidentally staged frontend files, unstage them before commit:
-
-```bash
-git restore --staged splitwise-frontend
-git restore --staged splitwise_frontend
-```
+- Auth flow now defaults to dashboard after login/register.
+- Header navigation updated to include Dashboard and Groups.
+- Profile popover added in header with user details and logout.
+- Group detail page updates:
+  - creator-only delete group action,
+  - member management modal,
+  - members side panel via options menu.
+- Expense list updates:
+  - permission-based expense delete,
+  - improved split status labels (`paid by`, `owes`, `settled`).
+- Add Expense modal updates:
+  - better alignment and responsive behavior,
+  - explicit handling for `EQUAL`, `EXACT`, `PERCENTAGE`, and `SHARES` input flows.
+- Balances page updates:
+  - user names shown instead of only IDs,
+  - settlement suggestions parser handles both object and ID payload shapes,
+  - filter dropdown with default `Balance Debts`,
+  - `Settlement Suggestions` and `Expense-Wise Member Splits` views,
+  - settle button enabled only for payer/receiver.
+- Dashboard page includes onboarding guidance for first-time users (empty-data state).
+- Shared button hover effects were refined and centralized for core action buttons.
 
 ---
 
