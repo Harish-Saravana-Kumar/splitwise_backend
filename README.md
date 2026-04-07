@@ -127,6 +127,36 @@ Swagger UI: `http://localhost:8080/swagger-ui/index.html`
 
 ---
 
+## Backend Update Workflow
+
+This repository contains a frontend folder (`splitwise-frontend/`) but backend changes are the primary focus here.
+
+### Keep frontend files out of backend commits
+
+The frontend folder is ignored in `.gitignore`:
+
+- `splitwise-frontend/`
+- `splitwise_frontend/`
+
+### Commit backend-only updates
+
+Use these commands when you want to push backend changes only:
+
+```bash
+git add .gitignore src pom.xml mvnw mvnw.cmd README.md
+git commit -m "feat: backend update"
+git push
+```
+
+If you accidentally staged frontend files, unstage them before commit:
+
+```bash
+git restore --staged splitwise-frontend
+git restore --staged splitwise_frontend
+```
+
+---
+
 ## Authentication
 
 All routes except `/api/auth/**` require a Bearer token.
