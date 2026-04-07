@@ -425,19 +425,19 @@ GET /api/v1/settlements/group/{groupId}
 
 Use `Authorization: Bearer <token>` on all requests below:
 
-POST   /api/auth/register
-POST   /api/auth/login
-POST   /api/v1/users/groups?creatorUserId=1
-POST   /api/v1/groups/1/members?userId=2
-POST   /api/v1/expenses
-GET    /api/v1/expenses/1
-GET    /api/v1/expenses/group/1
-GET    /api/v1/balances/group/1
-GET    /api/v1/balances/group/1/settlements
-POST   /api/v1/settlements
-GET    /api/v1/settlements/group/1
-GET    /api/v1/balances/group/1
-GET    /api/v1/balances/group/1/settlements
+1. `POST /api/auth/register`
+2. `POST /api/auth/login`
+3. `POST /api/v1/users/groups?creatorUserId=1`
+4. `POST /api/v1/groups/1/members?userId=2`
+5. `POST /api/v1/expenses`
+6. `GET /api/v1/expenses/1`
+7. `GET /api/v1/expenses/group/1`
+8. `GET /api/v1/balances/group/1`
+9. `GET /api/v1/balances/group/1/settlements`
+10. `POST /api/v1/settlements`
+11. `GET /api/v1/settlements/group/1`
+12. `GET /api/v1/balances/group/1`
+13. `GET /api/v1/balances/group/1/settlements`
 
 ---
 
