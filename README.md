@@ -461,6 +461,5 @@ Use `Authorization: Bearer <token>` on all requests below:
 - Firebase push notifications
 - Receipt scanning with AI
 - Multi-currency support
-- Frontend (React / Flutter)
 
 ---
