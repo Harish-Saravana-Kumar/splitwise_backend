@@ -24,6 +24,7 @@ settlement recording with JWT authentication.
 
 ## Project Structure
 
+```text
 src/main/java/com/splitwise/
 ├── config/
 │   └── SecurityConfig.java
@@ -78,6 +79,7 @@ src/main/java/com/splitwise/
 │   └── BalanceService.java
 └── utils/
     └── JwtUtil.java
+```
 
 ---
 
@@ -407,7 +409,3 @@ GET    /api/v1/balances/group/1/settlements
 - Frontend (React / Flutter)
 
 ---
-
-## License
-
-This project is for educational and personal use.
