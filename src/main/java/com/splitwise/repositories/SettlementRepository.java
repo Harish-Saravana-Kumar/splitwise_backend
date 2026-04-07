@@ -15,4 +15,6 @@ public interface SettlementRepository extends JpaRepository<Settlement, Long> {
     List<Settlement> findByReceiver_Id(Long receiverId);
 
     List<Settlement> findByGroup_IdOrderBySettledAtDesc(Long groupId);
+
+    void deleteByGroup_Id(Long groupId);
 }

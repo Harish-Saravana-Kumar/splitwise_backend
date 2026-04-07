@@ -16,8 +16,10 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 @Service
 @RequiredArgsConstructor
@@ -30,7 +32,7 @@ public class SettlementService {
     private final ExpenseSplitRepository expenseSplitRepository;
 
     @Transactional
-    public SettlementResponse settleUp(SettlementRequest request) {
+        public SettlementResponse settleUp(SettlementRequest request, String requesterEmail) {
         validateSettlementRequest(request);
 
         Group group = groupRepository.findById(request.getGroupId())
@@ -39,6 +41,16 @@ public class SettlementService {
                 .orElseThrow(() -> new RuntimeException("User not found"));
         User receiver = userRepository.findById(request.getReceiverId())
                 .orElseThrow(() -> new RuntimeException("User not found"));
+        User requester = userRepository.findByEmail(requesterEmail)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        boolean canSettle = requester.getId().equals(payer.getId()) || requester.getId().equals(receiver.getId());
+        if (!canSettle) {
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN,
+                    "Only the payer or receiver can perform this settlement"
+            );
+        }
 
         if (!groupMemberRepository.existsByGroup_IdAndUser_Id(group.getId(), payer.getId())
                 || !groupMemberRepository.existsByGroup_IdAndUser_Id(group.getId(), receiver.getId())) {

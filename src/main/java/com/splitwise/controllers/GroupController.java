@@ -5,6 +5,7 @@ import lombok.RequiredArgsConstructor;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -32,5 +33,16 @@ public class GroupController {
     @PostMapping("/{groupId}/members")
     public ResponseEntity<?> addMemberToGroup(@PathVariable Long groupId, @RequestParam Long userId) {
         return new ResponseEntity<>(groupService.addMemberToGroup(groupId, userId), HttpStatus.OK);
+    }
+
+    @GetMapping("/{groupId}/members")
+    public ResponseEntity<?> getGroupMembers(@PathVariable Long groupId) {
+        return new ResponseEntity<>(groupService.getGroupMembers(groupId), HttpStatus.OK);
+    }
+
+    @DeleteMapping("/{groupId}")
+    public ResponseEntity<?> deleteGroup(@PathVariable Long groupId, @RequestParam Long requesterUserId) {
+        groupService.deleteGroup(groupId, requesterUserId);
+        return new ResponseEntity<>(HttpStatus.NO_CONTENT);
     }
 }

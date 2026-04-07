@@ -6,6 +6,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -21,8 +22,8 @@ public class SettlementController {
     private final SettlementService settlementService;
 
     @PostMapping
-    public ResponseEntity<?> settleUp(@RequestBody @Valid SettlementRequest request) {
-        return new ResponseEntity<>(settlementService.settleUp(request), HttpStatus.CREATED);
+    public ResponseEntity<?> settleUp(@RequestBody @Valid SettlementRequest request, Authentication authentication) {
+        return new ResponseEntity<>(settlementService.settleUp(request, authentication.getName()), HttpStatus.CREATED);
     }
 
     @GetMapping("/group/{groupId}")

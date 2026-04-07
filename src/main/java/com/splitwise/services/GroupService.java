@@ -7,13 +7,19 @@ import com.splitwise.models.Group;
 import com.splitwise.models.GroupMember;
 import com.splitwise.models.User;
 import com.splitwise.models.enums.Role;
+import com.splitwise.repositories.ExpenseRepository;
+import com.splitwise.repositories.ExpenseSplitRepository;
 import com.splitwise.repositories.GroupMemberRepository;
 import com.splitwise.repositories.GroupRepository;
+import com.splitwise.repositories.SettlementRepository;
 import com.splitwise.repositories.UserRepository;
 import java.time.LocalDateTime;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 @Service
 @RequiredArgsConstructor
@@ -22,6 +28,9 @@ public class GroupService {
     private final GroupRepository groupRepository;
     private final GroupMemberRepository groupMemberRepository;
     private final UserRepository userRepository;
+        private final ExpenseRepository expenseRepository;
+        private final ExpenseSplitRepository expenseSplitRepository;
+        private final SettlementRepository settlementRepository;
 
     public GroupResponse createGroup(GroupRequest request, Long creatorUserId) {
         User creator = userRepository.findById(creatorUserId)
@@ -79,6 +88,34 @@ public class GroupService {
         groupMemberRepository.save(member);
 
         return mapToGroupResponse(group);
+    }
+
+    @Transactional(readOnly = true)
+    public List<UserResponse> getGroupMembers(Long groupId) {
+        Group group = groupRepository.findById(groupId)
+                .orElseThrow(() -> new RuntimeException("Group not found"));
+
+        return groupMemberRepository.findByGroup_Id(group.getId())
+                .stream()
+                .map(GroupMember::getUser)
+                .map(this::mapToUserResponse)
+                .toList();
+    }
+
+    @Transactional
+    public void deleteGroup(Long groupId, Long requesterUserId) {
+        Group group = groupRepository.findById(groupId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Group not found"));
+
+        if (!group.getCreatedBy().getId().equals(requesterUserId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only the group creator can delete this group");
+        }
+
+        expenseSplitRepository.deleteByExpense_Group_Id(groupId);
+        settlementRepository.deleteByGroup_Id(groupId);
+        groupMemberRepository.deleteByGroup_Id(groupId);
+        expenseRepository.deleteByGroup_Id(groupId);
+        groupRepository.delete(group);
     }
 
     private GroupResponse mapToGroupResponse(Group group) {

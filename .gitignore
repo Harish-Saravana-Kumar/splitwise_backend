@@ -47,3 +47,6 @@ hs_err_pid*
 ### OS Files ###
 .DS_Store
 Thumbs.db
+
+### Frontend Workspace ###
+splitwise_frontend/
