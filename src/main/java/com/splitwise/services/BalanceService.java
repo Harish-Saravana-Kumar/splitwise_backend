@@ -44,6 +44,17 @@ public class BalanceService {
         return balances;
     }
 
+    public BigDecimal getPendingSettlementBetween(Long groupId, Long payerId, Long receiverId) {
+        List<ExpenseSplit> unsettledSplits = expenseSplitRepository.findByExpense_Group_Id(groupId);
+
+        return unsettledSplits.stream()
+                .filter(split -> !split.isSettled())
+                .filter(split -> split.getUser().getId().equals(payerId))
+                .filter(split -> split.getExpense().getPaidBy().getId().equals(receiverId))
+                .map(ExpenseSplit::getOwedAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
     public List<SettlementResponse> getMinimumSettlements(Long groupId) {
         Map<Long, BigDecimal> balances = getGroupBalances(groupId);
         List<BalanceEntry> creditors = new ArrayList<>();

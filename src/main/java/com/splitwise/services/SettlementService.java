@@ -14,6 +14,7 @@ import com.splitwise.repositories.SettlementRepository;
 import com.splitwise.repositories.UserRepository;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.Comparator;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -30,6 +31,7 @@ public class SettlementService {
         private final GroupMemberRepository groupMemberRepository;
     private final UserRepository userRepository;
     private final ExpenseSplitRepository expenseSplitRepository;
+        private final BalanceService balanceService;
 
     @Transactional
         public SettlementResponse settleUp(SettlementRequest request, String requesterEmail) {
@@ -57,34 +59,59 @@ public class SettlementService {
             throw new RuntimeException("Payer and receiver must be members of the group");
         }
 
-        Settlement settlement = Settlement.builder()
-                .group(group)
-                .payer(payer)
-                .receiver(receiver)
-                .amount(request.getAmount())
-                .settledAt(LocalDateTime.now())
-                .build();
-        Settlement savedSettlement = settlementRepository.save(settlement);
-
-        List<ExpenseSplit> unsettledSplitsForGroup = expenseSplitRepository.findByExpense_Group_Id(request.getGroupId());
-        List<ExpenseSplit> payerUnsettledSplits = unsettledSplitsForGroup.stream()
-                .filter(split -> split.getUser().getId().equals(request.getPayerId()))
-                .filter(split -> !split.isSettled())
-                .toList();
-
-        BigDecimal pendingAmount = payerUnsettledSplits.stream()
-                .map(ExpenseSplit::getOwedAmount)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal pendingAmount = balanceService.getPendingSettlementBetween(
+                request.getGroupId(),
+                request.getPayerId(),
+                request.getReceiverId()
+        );
 
         if (pendingAmount.compareTo(BigDecimal.ZERO) == 0) {
-            throw new RuntimeException("Payer has no pending balance in this group");
+            throw new RuntimeException("Payer has no pending balance with the selected receiver in this group");
         }
-        if (request.getAmount().compareTo(pendingAmount) != 0) {
-            throw new RuntimeException("Settlement amount must exactly match payer pending balance");
+                if (request.getAmount().compareTo(pendingAmount) > 0) {
+                        throw new RuntimeException("Settlement amount cannot exceed pending balance between payer and receiver: " + pendingAmount);
         }
 
-        payerUnsettledSplits.forEach(split -> split.setSettled(true));
-        expenseSplitRepository.saveAll(payerUnsettledSplits);
+                BigDecimal remainingAmount = request.getAmount();
+                List<ExpenseSplit> payerUnsettledSplits = expenseSplitRepository.findByExpense_Group_Id(request.getGroupId()).stream()
+                                .filter(split -> split.getUser().getId().equals(request.getPayerId()))
+                                .filter(split -> split.getExpense().getPaidBy().getId().equals(request.getReceiverId()))
+                                .filter(split -> !split.isSettled())
+                                .sorted(Comparator
+                                                .comparing((ExpenseSplit split) -> split.getExpense().getCreatedAt(), Comparator.nullsLast(Comparator.naturalOrder()))
+                                                .thenComparing(ExpenseSplit::getId))
+                                .toList();
+
+                if (payerUnsettledSplits.isEmpty()) {
+                        throw new RuntimeException("Payer has no pending balance with the selected receiver in this group");
+                }
+
+                for (ExpenseSplit split : payerUnsettledSplits) {
+                        if (remainingAmount.compareTo(BigDecimal.ZERO) <= 0) {
+                                break;
+                        }
+
+                        BigDecimal updatedAmount = split.getOwedAmount().subtract(remainingAmount);
+                        if (updatedAmount.compareTo(BigDecimal.ZERO) > 0) {
+                                split.setOwedAmount(updatedAmount);
+                                remainingAmount = BigDecimal.ZERO;
+                        } else {
+                                split.setOwedAmount(BigDecimal.ZERO);
+                                split.setSettled(true);
+                                remainingAmount = updatedAmount.abs();
+                        }
+                }
+
+                expenseSplitRepository.saveAll(payerUnsettledSplits);
+
+                Settlement settlement = Settlement.builder()
+                                .group(group)
+                                .payer(payer)
+                                .receiver(receiver)
+                                .amount(request.getAmount())
+                                .settledAt(LocalDateTime.now())
+                                .build();
+                Settlement savedSettlement = settlementRepository.save(settlement);
 
         return mapToSettlementResponse(savedSettlement);
     }
@@ -96,14 +123,14 @@ public class SettlementService {
                 .toList();
     }
 
-        private void validateSettlementRequest(SettlementRequest request) {
-                if (request.getPayerId().equals(request.getReceiverId())) {
-                        throw new RuntimeException("Payer and receiver cannot be the same user");
-                }
-                if (request.getAmount() == null || request.getAmount().compareTo(BigDecimal.ZERO) <= 0) {
-                        throw new RuntimeException("Settlement amount must be greater than zero");
-                }
+    private void validateSettlementRequest(SettlementRequest request) {
+        if (request.getPayerId().equals(request.getReceiverId())) {
+            throw new RuntimeException("Payer and receiver cannot be the same user");
         }
+        if (request.getAmount() == null || request.getAmount().compareTo(BigDecimal.ZERO) <= 0) {
+            throw new RuntimeException("Settlement amount must be greater than zero");
+        }
+    }
 
     private SettlementResponse mapToSettlementResponse(Settlement settlement) {
         return SettlementResponse.builder()

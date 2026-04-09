@@ -37,6 +37,7 @@ public class User {
 
     private String avatarUrl;
 
+    @Builder.Default
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private Role role = Role.MEMBER;

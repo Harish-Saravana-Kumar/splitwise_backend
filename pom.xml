@@ -28,6 +28,7 @@
 	</scm>
 	<properties>
 		<java.version>25</java.version>
+		<langchain4j.version>1.12.2</langchain4j.version>
 	</properties>
 	<dependencies>
 		<dependency>
@@ -105,6 +106,21 @@
 			<artifactId>spring-security-oauth2-client</artifactId>
 			<version>7.0.4</version>
 			<scope>compile</scope>
+		</dependency>
+		<dependency>
+			<groupId>dev.langchain4j</groupId>
+			<artifactId>langchain4j</artifactId>
+			<version>${langchain4j.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>dev.langchain4j</groupId>
+			<artifactId>langchain4j-google-ai-gemini</artifactId>
+			<version>${langchain4j.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>dev.langchain4j</groupId>
+			<artifactId>langchain4j-open-ai</artifactId>
+			<version>${langchain4j.version}</version>
 		</dependency>
 	</dependencies>
 

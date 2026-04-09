@@ -43,6 +43,8 @@ hs_err_pid*
 ### Environment / Secrets ###
 .env
 .env.*
+src/main/resources/application-local.properties
+src/main/resources/application-secrets.properties
 
 ### OS Files ###
 .DS_Store

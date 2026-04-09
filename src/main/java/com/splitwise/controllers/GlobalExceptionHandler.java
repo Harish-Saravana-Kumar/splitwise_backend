@@ -13,17 +13,27 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.server.ResponseStatusException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    @ExceptionHandler(ResponseStatusException.class)
+    public ResponseEntity<?> handleResponseStatusException(ResponseStatusException ex, HttpServletRequest request) {
+        Map<String, Object> response = new HashMap<>();
+        response.put("error", ex.getReason() != null ? ex.getReason() : ex.getMessage());
+        response.put("status", ex.getStatusCode().value());
+        response.put("path", request.getRequestURI());
+        return new ResponseEntity<>(response, ex.getStatusCode());
+    }
 
     @ExceptionHandler(RuntimeException.class)
     public ResponseEntity<?> handleRuntimeException(RuntimeException ex, HttpServletRequest request) {
         Map<String, Object> response = new HashMap<>();
         response.put("error", ex.getMessage());
-        response.put("status", HttpStatus.NOT_FOUND.value());
+        response.put("status", HttpStatus.BAD_REQUEST.value());
         response.put("path", request.getRequestURI());
-        return new ResponseEntity<>(response, HttpStatus.NOT_FOUND);
+        return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

@@ -1,8 +1,8 @@
 # Splitwise Backend
 
-A RESTful expense splitting backend built with Java 21 and Spring Boot.
-Supports group creation, expense tracking, debt calculation, and
-settlement recording with JWT authentication.
+A RESTful expense splitting backend built with Java and Spring Boot.
+Supports group creation, expense tracking, debt calculation,
+settlement recording, and an assistant workflow for guided expense/settle-up actions.
 
 ---
 
@@ -10,8 +10,8 @@ settlement recording with JWT authentication.
 
 | Layer          | Technology                        |
 |----------------|-----------------------------------|
-| Language       | Java 21                           |
-| Framework      | Spring Boot 3.3.x                |
+| Language       | Java 25                           |
+| Framework      | Spring Boot 4.0.5                |
 | Database       | PostgreSQL                        |
 | Security       | Spring Security + JWT (JJWT)      |
 | ORM            | Spring Data JPA + Hibernate       |
@@ -26,6 +26,30 @@ settlement recording with JWT authentication.
 
 ```text
 src/main/java/com/splitwise/
+├── assistant/
+│   ├── config/
+│   │   └── AssistantProperties.java
+│   ├── context/
+│   │   └── AssistantUserContext.java
+│   ├── controller/
+│   │   └── AssistantController.java
+│   ├── dto/
+│   │   ├── AssistantChatRequest.java
+│   │   └── AssistantChatResponse.java
+│   ├── model/
+│   │   ├── AssistantActionType.java
+│   │   ├── AssistantChatMessage.java
+│   │   ├── AssistantConversation.java
+│   │   ├── AssistantMessageRole.java
+│   │   └── PendingAssistantAction.java
+│   ├── repository/
+│   │   ├── AssistantChatMessageRepository.java
+│   │   └── AssistantConversationRepository.java
+│   ├── service/
+│   │   ├── AssistantAgentService.java
+│   │   └── AssistantPendingActionService.java
+│   └── tools/
+│       └── SplitwiseAssistantTools.java
 ├── config/
 │   └── SecurityConfig.java
 ├── controllers/
@@ -50,7 +74,8 @@ src/main/java/com/splitwise/
 │       ├── GroupResponse.java
 │       ├── ExpenseResponse.java
 │       ├── ExpenseSplitResponse.java
-│       └── SettlementResponse.java
+│       ├── SettlementResponse.java
+│       └── SettlementBalanceResponse.java
 ├── filters/
 │   └── JwtAuthFilter.java
 ├── models/
@@ -87,7 +112,7 @@ src/main/java/com/splitwise/
 
 ### Prerequisites
 
-- Java 21
+- Java 25
 - Maven 3.9+
 - PostgreSQL 15+
 
@@ -114,7 +139,38 @@ jwt.secret=c3BsaXR3aXNlLXNlY3JldC1rZXktZm9yLWp3dC1hdXRoZW50aWNhdGlvbi0yMDI0
 jwt.expiration=86400000
 
 server.port=8080
+
+# Assistant (Groq/OpenAI-compatible)
+assistant.enabled=true
+assistant.provider=groq
+assistant.model=llama-3.1-8b-instant
+assistant.api-key=${GROQ_API_KEY:}
+assistant.base-url=https://api.groq.com/openai/v1
+
+langchain4j.open-ai.chat-model.base-url=https://api.groq.com/openai/v1
+langchain4j.open-ai.chat-model.api-key=${GROQ_API_KEY:}
+langchain4j.open-ai.chat-model.model-name=llama-3.1-8b-instant
 ```
+
+Set your Groq key in environment variables (recommended, do not hardcode):
+
+```powershell
+$env:GROQ_API_KEY="<your_groq_api_key>"
+```
+
+### Assistant Setup Checklist
+
+1. Keep assistant keys in environment variables, not in tracked files.
+2. Ensure these values exist in `src/main/resources/application.properties`:
+  - `assistant.enabled=true`
+  - `assistant.provider=groq`
+  - `assistant.base-url=https://api.groq.com/openai/v1`
+  - `assistant.api-key=${GROQ_API_KEY:}`
+3. Start backend and verify assistant endpoint:
+  - `POST /api/v1/assistant/chat` (with Bearer token)
+4. Use guided actions for write operations:
+  - create expense -> confirm token
+  - settle up -> confirm token
 
 ### Run the Project
 ```bash
@@ -155,6 +211,12 @@ This section summarizes the major logic and behavior updates currently implement
   - total owes,
   - group-wise net summary,
   - person-to-person net balances.
+- Assistant API added: `POST /api/v1/assistant/chat` with:
+  - normal assistant chat,
+  - guided expense form flow,
+  - guided settle-up flow,
+  - explicit confirmation-token execution,
+  - previous-question recall from persisted chat history.
 
 ### Frontend + Behavior Updates
 
@@ -461,5 +523,43 @@ Use `Authorization: Bearer <token>` on all requests below:
 - Firebase push notifications
 - Receipt scanning with AI
 - Multi-currency support
+
+---
+
+## Move to GitHub
+
+The backend and frontend are separate Git repositories and should be pushed independently.
+
+### 1. Push Backend Repository
+
+```powershell
+Set-Location h:\job\projects\splitwise-backend
+git status
+git add -A
+git commit -m "feat: backend updates"
+git push origin main
+```
+
+### 2. Push Frontend Repository
+
+```powershell
+Set-Location h:\job\projects\splitwise-backend\splitwise-frontend
+git status
+git add -A
+git commit -m "feat: frontend updates"
+git push origin main
+```
+
+### 3. Verify Ignore Rules Before Push
+
+Backend `.gitignore` should include:
+- `.env`
+- `.env.*`
+- `src/main/resources/application-local.properties`
+- `src/main/resources/application-secrets.properties`
+
+Frontend `.gitignore` should include:
+- `.env`
+- `.env.*`
 
 ---
