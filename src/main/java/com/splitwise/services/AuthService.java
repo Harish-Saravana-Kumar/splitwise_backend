@@ -30,6 +30,9 @@ public class AuthService {
                 .email(request.getEmail())
                 .password(passwordEncoder.encode(request.getPassword()))
                 .avatarUrl(request.getAvatarUrl())
+            .provider("local")
+            .providerId(null)
+            .profilePicture(request.getAvatarUrl())
                 .role(Role.MEMBER)
                 .createdAt(LocalDateTime.now())
                 .build();
@@ -43,6 +46,9 @@ public class AuthService {
                 .name(savedUser.getName())
                 .email(savedUser.getEmail())
                 .role(savedUser.getRole().name())
+            .provider(savedUser.getProvider())
+            .providerId(savedUser.getProviderId())
+            .profilePicture(savedUser.getProfilePicture() != null ? savedUser.getProfilePicture() : savedUser.getAvatarUrl())
                 .build();
     }
 
@@ -50,7 +56,7 @@ public class AuthService {
         User user = userRepository.findByEmail(request.getEmail())
                 .orElseThrow(() -> new RuntimeException("Invalid credentials"));
 
-        if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
+        if (user.getPassword() == null || !passwordEncoder.matches(request.getPassword(), user.getPassword())) {
             throw new RuntimeException("Invalid credentials");
         }
 
@@ -62,6 +68,9 @@ public class AuthService {
                 .name(user.getName())
                 .email(user.getEmail())
                 .role(user.getRole().name())
+            .provider(user.getProvider())
+            .providerId(user.getProviderId())
+            .profilePicture(user.getProfilePicture() != null ? user.getProfilePicture() : user.getAvatarUrl())
                 .build();
     }
 }

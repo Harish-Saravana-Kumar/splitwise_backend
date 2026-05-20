@@ -30,6 +30,8 @@ public class UserService {
                 .name(user.getName())
                 .email(user.getEmail())
                 .avatarUrl(user.getAvatarUrl())
+                .profilePicture(user.getProfilePicture())
+                .provider(user.getProvider())
                 .build();
     }
 }

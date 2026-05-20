@@ -16,4 +16,6 @@ public interface AssistantChatMessageRepository extends JpaRepository<AssistantC
             AssistantMessageRole role,
             Pageable pageable
     );
+
+    long countByConversation(AssistantConversation conversation);
 }

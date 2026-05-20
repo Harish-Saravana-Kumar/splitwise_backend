@@ -46,11 +46,11 @@ public class SettlementService {
         User requester = userRepository.findByEmail(requesterEmail)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
-        boolean canSettle = requester.getId().equals(payer.getId()) || requester.getId().equals(receiver.getId());
+        boolean canSettle = requester.getId().equals(payer.getId());
         if (!canSettle) {
             throw new ResponseStatusException(
                     HttpStatus.FORBIDDEN,
-                    "Only the payer or receiver can perform this settlement"
+                    "Only the payer can perform this settlement"
             );
         }
 

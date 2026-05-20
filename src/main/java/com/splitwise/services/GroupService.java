@@ -13,8 +13,10 @@ import com.splitwise.repositories.GroupMemberRepository;
 import com.splitwise.repositories.GroupRepository;
 import com.splitwise.repositories.SettlementRepository;
 import com.splitwise.repositories.UserRepository;
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -31,6 +33,7 @@ public class GroupService {
         private final ExpenseRepository expenseRepository;
         private final ExpenseSplitRepository expenseSplitRepository;
         private final SettlementRepository settlementRepository;
+    private final BalanceService balanceService;
 
     public GroupResponse createGroup(GroupRequest request, Long creatorUserId) {
         User creator = userRepository.findById(creatorUserId)
@@ -69,31 +72,16 @@ public class GroupService {
                 .toList();
     }
 
-    public GroupResponse addMemberToGroup(Long groupId, Long userId) {
-        if (groupMemberRepository.existsByGroup_IdAndUser_Id(groupId, userId)) {
-            throw new RuntimeException("User already in group");
-        }
-
+    @Transactional(readOnly = true)
+    public List<UserResponse> getGroupMembers(Long groupId, String requesterEmail) {
         Group group = groupRepository.findById(groupId)
                 .orElseThrow(() -> new RuntimeException("Group not found"));
-        User user = userRepository.findById(userId)
+        User requester = userRepository.findByEmail(requesterEmail)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
-        GroupMember member = GroupMember.builder()
-                .group(group)
-                .user(user)
-                .role(Role.MEMBER)
-                .joinedAt(LocalDateTime.now())
-                .build();
-        groupMemberRepository.save(member);
-
-        return mapToGroupResponse(group);
-    }
-
-    @Transactional(readOnly = true)
-    public List<UserResponse> getGroupMembers(Long groupId) {
-        Group group = groupRepository.findById(groupId)
-                .orElseThrow(() -> new RuntimeException("Group not found"));
+        if (!groupMemberRepository.existsByGroup_IdAndUser_Id(groupId, requester.getId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only group members can view members list");
+        }
 
         return groupMemberRepository.findByGroup_Id(group.getId())
                 .stream()
@@ -116,6 +104,55 @@ public class GroupService {
         groupMemberRepository.deleteByGroup_Id(groupId);
         expenseRepository.deleteByGroup_Id(groupId);
         groupRepository.delete(group);
+    }
+
+    @Transactional
+    public void leaveGroup(Long groupId, String requesterEmail) {
+        Group group = groupRepository.findById(groupId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Group not found"));
+        User requester = userRepository.findByEmail(requesterEmail)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
+
+        if (group.getCreatedBy().getId().equals(requester.getId())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Group creator cannot leave the group");
+        }
+
+        if (!groupMemberRepository.existsByGroup_IdAndUser_Id(groupId, requester.getId())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "You are not a member of this group");
+        }
+
+        Map<Long, BigDecimal> balances = balanceService.getGroupBalances(groupId);
+        BigDecimal net = balances.getOrDefault(requester.getId(), BigDecimal.ZERO);
+        if (net.compareTo(BigDecimal.ZERO) != 0) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Clear your outstanding balance before leaving the group"
+            );
+        }
+
+        groupMemberRepository.deleteByGroup_IdAndUser_Id(groupId, requester.getId());
+    }
+
+    @Transactional
+    public void removeMember(Long groupId, Long memberId, String requesterEmail) {
+        Group group = groupRepository.findById(groupId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Group not found"));
+        User requester = userRepository.findByEmail(requesterEmail)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
+
+        if (!group.getCreatedBy().getId().equals(requester.getId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only the group creator can remove members");
+        }
+
+        if (group.getCreatedBy().getId().equals(memberId)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Group creator cannot be removed");
+        }
+
+        if (!groupMemberRepository.existsByGroup_IdAndUser_Id(groupId, memberId)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Member not found in this group");
+        }
+
+        groupMemberRepository.deleteByGroup_IdAndUser_Id(groupId, memberId);
     }
 
     private GroupResponse mapToGroupResponse(Group group) {

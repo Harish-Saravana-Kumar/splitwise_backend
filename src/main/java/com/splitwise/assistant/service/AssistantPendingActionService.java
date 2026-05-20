@@ -111,9 +111,9 @@ public class AssistantPendingActionService {
         User receiver = userRepository.findById(receiverId)
             .orElseThrow(() -> new RuntimeException("Receiver user not found"));
 
-            boolean requesterCanSettle = requester.getId().equals(payerId) || requester.getId().equals(receiverId);
+            boolean requesterCanSettle = requester.getId().equals(payerId);
             if (!requesterCanSettle) {
-                throw new RuntimeException("Only the expense payer or the owed person can settle up.");
+                throw new RuntimeException("Only the payer can settle up.");
             }
 
             if (!groupMemberRepository.existsByGroup_IdAndUser_Id(groupId, payerId)

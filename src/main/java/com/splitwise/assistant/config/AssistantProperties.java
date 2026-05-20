@@ -17,6 +17,8 @@ public class AssistantProperties {
     private int timeoutSeconds = 20;
     private int pendingActionTtlSeconds = 300;
     private int historyLoadLimit = 20;
+    private int memoryWindowMessages = 12;
+    private int recentExpenseLimit = 10;
     private Google google = new Google();
 
     @Data

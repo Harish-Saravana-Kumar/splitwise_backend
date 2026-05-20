@@ -35,19 +35,35 @@ src/main/java/com/splitwise/
 │   │   └── AssistantController.java
 │   ├── dto/
 │   │   ├── AssistantChatRequest.java
-│   │   └── AssistantChatResponse.java
+│   │   ├── AssistantChatResponse.java
+│   │   ├── AssistantFinancialContext.java
+│   │   └── ExpenseSummary.java
 │   ├── model/
 │   │   ├── AssistantActionType.java
 │   │   ├── AssistantChatMessage.java
 │   │   ├── AssistantConversation.java
+│   │   ├── AssistantConversationMemory.java
+│   │   ├── AssistantInsight.java
+│   │   ├── AssistantInsightType.java
 │   │   ├── AssistantMessageRole.java
+│   │   ├── AssistantSummary.java
+│   │   ├── AssistantSummaryPeriod.java
 │   │   └── PendingAssistantAction.java
 │   ├── repository/
 │   │   ├── AssistantChatMessageRepository.java
-│   │   └── AssistantConversationRepository.java
+│   │   ├── AssistantConversationMemoryRepository.java
+│   │   ├── AssistantConversationRepository.java
+│   │   ├── AssistantInsightRepository.java
+│   │   └── AssistantSummaryRepository.java
 │   ├── service/
 │   │   ├── AssistantAgentService.java
-│   │   └── AssistantPendingActionService.java
+│   │   ├── AssistantContextBuilderService.java
+│   │   ├── AssistantInsightService.java
+│   │   ├── AssistantMemoryService.java
+│   │   ├── AssistantPendingActionService.java
+│   │   ├── AssistantQueryService.java
+│   │   ├── AssistantRecommendationService.java
+│   │   └── AssistantSummaryService.java
 │   └── tools/
 │       └── SplitwiseAssistantTools.java
 ├── config/
@@ -146,6 +162,8 @@ assistant.provider=groq
 assistant.model=llama-3.1-8b-instant
 assistant.api-key=${GROQ_API_KEY:}
 assistant.base-url=https://api.groq.com/openai/v1
+assistant.memory-window-messages=12
+assistant.recent-expense-limit=10
 
 langchain4j.open-ai.chat-model.base-url=https://api.groq.com/openai/v1
 langchain4j.open-ai.chat-model.api-key=${GROQ_API_KEY:}

@@ -37,10 +37,24 @@ public class User {
 
     private String avatarUrl;
 
+    @Column(length = 50)
+    private String provider;
+
+    @Column(unique = true, length = 200)
+    private String providerId;
+
+    @Column(length = 1000)
+    private String profilePicture;
+
     @Builder.Default
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private Role role = Role.MEMBER;
 
     private LocalDateTime createdAt;
+
+    @Column(length = 64)
+    private String resetPasswordToken;
+
+    private LocalDateTime resetPasswordTokenExpiresAt;
 }

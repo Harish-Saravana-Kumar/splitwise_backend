@@ -1,0 +1,12 @@
+target/
+**/target/
+*.jar
+*.jar.original
+**/node_modules/
+splitwise-frontend/dist/
+splitwise-frontend/node_modules/
+.git/
+.vscode/
+.idea/
+*.log
+/.mvn/wrapper/maven-wrapper.jar

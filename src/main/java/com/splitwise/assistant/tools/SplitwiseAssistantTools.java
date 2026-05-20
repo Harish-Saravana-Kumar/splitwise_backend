@@ -1,15 +1,16 @@
 package com.splitwise.assistant.tools;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.splitwise.assistant.context.AssistantUserContext;
+import com.splitwise.assistant.dto.AssistantFinancialContext;
+import com.splitwise.assistant.dto.ExpenseSummary;
 import com.splitwise.assistant.model.PendingAssistantAction;
+import com.splitwise.assistant.service.AssistantContextBuilderService;
 import com.splitwise.assistant.service.AssistantPendingActionService;
-import com.splitwise.assistant.service.AssistantQueryService;
 import com.splitwise.dto.response.DashboardGroupSummaryResponse;
 import com.splitwise.dto.response.DashboardPersonBalanceResponse;
 import com.splitwise.dto.response.DashboardResponse;
-import com.splitwise.models.Expense;
-import com.splitwise.models.User;
-import com.splitwise.repositories.UserRepository;
 import com.splitwise.services.DashboardService;
 import dev.langchain4j.agent.tool.Tool;
 import java.math.BigDecimal;
@@ -25,9 +26,9 @@ public class SplitwiseAssistantTools {
     private static final DateTimeFormatter RECENT_EXPENSES_DATE_FORMAT = DateTimeFormatter.ofPattern("dd MMM yyyy, hh:mm a");
 
     private final DashboardService dashboardService;
-    private final AssistantQueryService assistantQueryService;
+    private final AssistantContextBuilderService assistantContextBuilderService;
     private final AssistantPendingActionService pendingActionService;
-    private final UserRepository userRepository;
+    private final ObjectMapper objectMapper;
 
     @Tool("Get the current user's total paid, total owes, net, and brief group-level summary.")
     public String getMyFinancialSummary() {
@@ -78,30 +79,67 @@ public class SplitwiseAssistantTools {
     @Tool("Get recent expenses for the current user. Use limit between 1 and 20.")
     public String getRecentExpenses(int limit) {
         String userEmail = requiredUserEmail();
-        User user = findUserByEmail(userEmail);
         int safeLimit = Math.max(1, Math.min(limit, 20));
 
-        List<Expense> expenses = assistantQueryService.getRecentExpensesForUser(user.getId(), safeLimit);
-        if (expenses.isEmpty()) {
+        AssistantFinancialContext context = assistantContextBuilderService.buildContextForUser(userEmail);
+        List<ExpenseSummary> expenses = context.recentExpenses();
+        if (expenses == null || expenses.isEmpty()) {
             return "No recent expenses found.";
         }
 
         StringBuilder out = new StringBuilder("Your most recent expenses:\n");
-        for (Expense expense : expenses) {
+        for (ExpenseSummary expense : expenses.stream().limit(safeLimit).toList()) {
             out.append("- ")
-                    .append(expense.getDescription())
+                .append(expense.title())
                     .append(" | Paid by ")
-                    .append(expense.getPaidBy().getName())
+                .append(expense.paidBy())
                     .append(" | ")
-                    .append(expense.getAmount())
+                .append(expense.amount())
                     .append(" | Group: ")
-                    .append(expense.getGroup().getName())
+                .append(expense.groupName())
                     .append(" | ")
-                    .append(expense.getCreatedAt() != null ? expense.getCreatedAt().format(RECENT_EXPENSES_DATE_FORMAT) : "Date unknown")
+                .append(expense.createdAt() != null ? expense.createdAt().format(RECENT_EXPENSES_DATE_FORMAT) : "Date unknown")
                     .append("\n");
         }
 
         return out.toString().trim();
+    }
+
+    @Tool("Get concise spending insights for the current user: totals, average, top groups, and notable expenses.")
+    public String getSpendingInsights() {
+        String userEmail = requiredUserEmail();
+
+        AssistantFinancialContext context = assistantContextBuilderService.buildContextForUser(userEmail);
+        StringBuilder sb = new StringBuilder();
+        sb.append("Spending insights:\n");
+
+        if (context.insights() == null || context.insights().isEmpty()) {
+            sb.append("- No insights available yet.\n");
+        } else {
+            for (String insight : context.insights()) {
+                sb.append("- ").append(insight).append("\n");
+            }
+        }
+
+        if (context.recommendations() != null && !context.recommendations().isEmpty()) {
+            sb.append("Recommendations:\n");
+            for (String recommendation : context.recommendations()) {
+                sb.append("- ").append(recommendation).append("\n");
+            }
+        }
+
+        return sb.toString().trim();
+    }
+
+    @Tool("Get structured financial context for the current user. Returns JSON with totals, recent expenses, insights, recommendations, and summary.")
+    public String getFinancialContext() {
+        String userEmail = requiredUserEmail();
+        AssistantFinancialContext context = assistantContextBuilderService.buildContextForUser(userEmail);
+        try {
+            return objectMapper.writeValueAsString(context);
+        } catch (JsonProcessingException ex) {
+            return "Unable to serialize context. Summary: totalSpent=" + context.totalSpent() + ", topCategory=" + context.topCategory();
+        }
     }
 
     @Tool("Prepare creating an EQUAL split expense. This does not write immediately; it returns a confirmation token.")
@@ -138,8 +176,4 @@ public class SplitwiseAssistantTools {
         return userEmail;
     }
 
-    private User findUserByEmail(String email) {
-        return userRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("User not found"));
-    }
 }

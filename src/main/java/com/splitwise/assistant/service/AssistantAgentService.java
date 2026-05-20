@@ -13,7 +13,7 @@ import com.splitwise.assistant.repository.AssistantConversationRepository;
 import com.splitwise.assistant.tools.SplitwiseAssistantTools;
 import com.splitwise.models.User;
 import com.splitwise.repositories.UserRepository;
-import dev.langchain4j.memory.chat.MessageWindowChatMemory;
+import com.splitwise.assistant.service.AssistantMemoryService;
 import dev.langchain4j.model.openai.OpenAiChatModel;
 import dev.langchain4j.service.AiServices;
 import dev.langchain4j.service.MemoryId;
@@ -46,7 +46,6 @@ public class AssistantAgentService {
     public static final String ACTION_CREATE_EQUAL_EXPENSE_SUBMIT = "CREATE_EQUAL_EXPENSE_SUBMIT";
     public static final String ACTION_SETTLE_UP_FORM = "SETTLE_UP_FORM";
     public static final String ACTION_SETTLE_UP_SUBMIT = "SETTLE_UP_SUBMIT";
-    private static final int CHAT_MEMORY_WINDOW_MESSAGES = 8;
     private static final int MAX_HISTORY_MESSAGE_CHARS = 320;
     private static final int MAX_TOTAL_PROMPT_CHARS = 2200;
     private static final int LAST_QUESTION_LOOKBACK = 30;
@@ -54,6 +53,7 @@ public class AssistantAgentService {
 
     private final AssistantProperties assistantProperties;
     private final AssistantPendingActionService pendingActionService;
+    private final AssistantMemoryService assistantMemoryService;
     private final SplitwiseAssistantTools splitwiseAssistantTools;
     private final AssistantConversationRepository assistantConversationRepository;
     private final AssistantChatMessageRepository assistantChatMessageRepository;
@@ -69,7 +69,7 @@ public class AssistantAgentService {
             splitwiseChatAgent = AiServices.builder(SplitwiseChatAgent.class)
                     .chatModel(chatLanguageModel)
                     .tools(splitwiseAssistantTools)
-                    .chatMemoryProvider(memoryId -> MessageWindowChatMemory.withMaxMessages(CHAT_MEMORY_WINDOW_MESSAGES))
+                    .chatMemoryProvider(memoryId -> assistantMemoryService.getMemoryForUser(String.valueOf(memoryId)))
                     .build();
         }
         return splitwiseChatAgent;
@@ -80,7 +80,7 @@ public class AssistantAgentService {
         if (splitwisePlainAgent == null && chatLanguageModel != null) {
             splitwisePlainAgent = AiServices.builder(SplitwisePlainAgent.class)
                     .chatModel(chatLanguageModel)
-                    .chatMemoryProvider(memoryId -> MessageWindowChatMemory.withMaxMessages(CHAT_MEMORY_WINDOW_MESSAGES))
+                    .chatMemoryProvider(memoryId -> assistantMemoryService.getMemoryForUser(String.valueOf(memoryId)))
                     .build();
         }
         return splitwisePlainAgent;
@@ -297,6 +297,18 @@ public class AssistantAgentService {
             }
         }
 
+        if (isSessionInfoIntent(request.getMessage())) {
+            return handleSessionInfoRequest(conversation, conversationId, userEmail);
+        }
+
+        if (isAssistantHelpIntent(request.getMessage())) {
+            return handleAssistantHelpRequest(conversation, conversationId, request.getMessage());
+        }
+
+        if (isFinancialAnalysisIntent(request.getMessage())) {
+            return handleFinancialAnalysisRequest(conversation, conversationId, userEmail, request.getMessage());
+        }
+
         if (isDirectBalanceIntent(request.getMessage())) {
             return handleDirectBalanceRequest(conversation, conversationId, request.getMessage(), userEmail);
         }
@@ -332,44 +344,8 @@ public class AssistantAgentService {
 
         saveMessage(conversation, AssistantMessageRole.USER, request.getMessage());
 
-        SplitwiseChatAgent agent = getAgent();
-        if (agent == null) {
-            throw new RuntimeException(
-                    "Assistant model is not configured. Set assistant.api-key or langchain4j.open-ai.chat-model.api-key (or GROQ_API_KEY)."
-            );
-        }
-
-        String output;
         String prompt = buildPromptWithHistory(conversation, request.getMessage());
-        log.info(
-                "Assistant chat request: conversationId={}, user={}, inputChars={}, promptChars={}, historyLimit={}, maxOutputTokens={}",
-                conversationId,
-                userEmail,
-                request.getMessage().length(),
-                prompt.length(),
-                assistantProperties.getHistoryLoadLimit(),
-                resolveMaxOutputTokens()
-        );
-        AssistantUserContext.setUserEmail(userEmail);
-        try {
-            output = agent.chat(conversationId, prompt);
-        } catch (RuntimeException ex) {
-            if (isToolUseFailure(ex)) {
-                log.warn("Tool-call generation failed, retrying with plain chat model. conversationId={}, user={}", conversationId, userEmail, ex);
-                SplitwisePlainAgent plainAgent = getPlainAgent();
-                if (plainAgent != null) {
-                    output = plainAgent.chat(conversationId, prompt);
-                } else {
-                    throw ex;
-                }
-            } else if (isRateLimitFailure(ex)) {
-                throw new RuntimeException(buildRateLimitMessage(ex));
-            } else {
-                throw ex;
-            }
-        } finally {
-            AssistantUserContext.clear();
-        }
+        String output = generateAssistantReply(conversationId, userEmail, request.getMessage().length(), prompt);
 
         saveMessage(conversation, AssistantMessageRole.ASSISTANT, output);
 
@@ -478,6 +454,32 @@ public class AssistantAgentService {
             || normalized.contains("expense i made");
     }
 
+    private boolean isAssistantHelpIntent(String message) {
+        String normalized = message.trim().toLowerCase();
+        return normalized.equals("hi")
+            || normalized.contains("help")
+            || normalized.contains("what can you do")
+            || normalized.contains("capabilities")
+            || normalized.contains("services")
+            || normalized.contains("features")
+            || normalized.contains("assistant") && normalized.contains("do");
+    }
+
+    private boolean isFinancialAnalysisIntent(String message) {
+        String normalized = message.trim().toLowerCase();
+        return normalized.contains("summarize")
+            || normalized.contains("summary")
+            || normalized.contains("insight")
+            || normalized.contains("insights")
+            || normalized.contains("analyze")
+            || normalized.contains("analysis")
+            || normalized.contains("trend")
+            || normalized.contains("trends")
+            || normalized.contains("patterns")
+            || normalized.contains("overview")
+            || normalized.contains("spending habits");
+    }
+
     private boolean isSettleUpIntent(String message) {
         String normalized = message.toLowerCase();
         return normalized.contains("settle up")
@@ -494,6 +496,40 @@ public class AssistantAgentService {
             || normalized.contains("what did i ask")
             || normalized.contains("earlier question");
         }
+
+    private boolean isSessionInfoIntent(String message) {
+        String normalized = message.trim().toLowerCase();
+        return normalized.contains("session")
+            || normalized.contains("conversation")
+            || normalized.contains("my past chats")
+            || normalized.contains("show my session")
+            || normalized.contains("session summary")
+            || normalized.contains("conversation summary")
+            || normalized.contains("what did i do")
+            || normalized.contains("what have i asked");
+    }
+
+    private AssistantChatResponse handleSessionInfoRequest(AssistantConversation conversation, String conversationId, String userEmail) {
+        long messageCount = assistantChatMessageRepository.countByConversation(conversation);
+        List<AssistantChatMessage> recent = assistantChatMessageRepository.findByConversationOrderByCreatedAtDesc(conversation, PageRequest.of(0, 5));
+        String lastUser = recent.stream()
+                .filter(m -> m.getRole() == AssistantMessageRole.USER)
+                .map(AssistantChatMessage::getContent)
+                .findFirst()
+                .orElse("(no recent user messages)");
+
+        String summary = String.format("Session id=%s. Messages=%d. Last user message: %s", conversationId, messageCount, lastUser);
+        saveMessage(conversation, AssistantMessageRole.ASSISTANT, summary);
+
+        return AssistantChatResponse.builder()
+                .conversationId(conversationId)
+                .message(summary)
+                .requiresConfirmation(false)
+                .confirmationToken(null)
+                .actionType(null)
+                .actionData(null)
+                .build();
+    }
 
         private AssistantChatResponse handleLastQuestionRequest(
             AssistantConversation conversation,
@@ -658,6 +694,119 @@ public class AssistantAgentService {
                 .build();
     }
 
+            private AssistantChatResponse handleAssistantHelpRequest(
+                AssistantConversation conversation,
+                String conversationId,
+                String userMessage
+            ) {
+            saveMessage(conversation, AssistantMessageRole.USER, userMessage);
+            String responseText = buildAssistantCapabilitiesResponse();
+            saveMessage(conversation, AssistantMessageRole.ASSISTANT, responseText);
+            return AssistantChatResponse.builder()
+                .conversationId(conversationId)
+                .message(responseText)
+                .requiresConfirmation(false)
+                .confirmationToken(null)
+                .actionType(null)
+                .actionData(null)
+                .build();
+            }
+
+            private String buildAssistantCapabilitiesResponse() {
+            return "Here\'s what I can help you with:\n\n"
+                + "Spending & Balances\n"
+                + "• Check who owes whom\n"
+                + "• View recent expenses\n"
+                + "• Get spending summaries\n\n"
+                + "Expense Management\n"
+                + "• Create shared expenses\n"
+                + "• Update expense details\n"
+                + "• Prepare settlements\n\n"
+                + "Insights & Analytics\n"
+                + "• Analyze spending patterns\n"
+                + "• Generate spending insights\n"
+                + "• Summarize financial activity";
+            }
+
+    private AssistantChatResponse handleFinancialAnalysisRequest(
+            AssistantConversation conversation,
+            String conversationId,
+            String userEmail,
+            String userMessage
+    ) {
+        saveMessage(conversation, AssistantMessageRole.USER, userMessage);
+
+        AssistantUserContext.setUserEmail(userEmail);
+        String contextJson;
+        String balances;
+        String dues;
+        try {
+            contextJson = splitwiseAssistantTools.getFinancialContext();
+            balances = splitwiseAssistantTools.getMyFinancialSummary();
+            dues = splitwiseAssistantTools.getWhoOwesWhom();
+        } finally {
+            AssistantUserContext.clear();
+        }
+
+        String prompt = "User request: " + userMessage + "\n"
+                + "Financial context (JSON): " + contextJson + "\n"
+                + "Balance summary: " + balances + "\n"
+                + "Dues summary: " + dues + "\n"
+                + "Instructions: Provide concise insights, patterns, or observations. "
+                + "Do not repeat raw expense lists. Use bullet points when helpful.";
+
+        String output = generateAssistantReply(conversationId, userEmail, userMessage.length(), prompt);
+        saveMessage(conversation, AssistantMessageRole.ASSISTANT, output);
+
+        return AssistantChatResponse.builder()
+                .conversationId(conversationId)
+                .message(output)
+                .requiresConfirmation(false)
+                .confirmationToken(null)
+                .actionType(null)
+                .actionData(null)
+                .build();
+    }
+
+    private String generateAssistantReply(String conversationId, String userEmail, int inputChars, String prompt) {
+        SplitwiseChatAgent agent = getAgent();
+        if (agent == null) {
+            throw new RuntimeException(
+                    "Assistant model is not configured. Set assistant.api-key or langchain4j.open-ai.chat-model.api-key (or GROQ_API_KEY)."
+            );
+        }
+
+        log.info(
+                "Assistant chat request: conversationId={}, user={}, inputChars={}, promptChars={}, historyLimit={}, maxOutputTokens={}",
+                conversationId,
+                userEmail,
+                inputChars,
+                prompt.length(),
+                assistantProperties.getHistoryLoadLimit(),
+                resolveMaxOutputTokens()
+        );
+
+        AssistantUserContext.setUserEmail(userEmail);
+        try {
+            return agent.chat(userEmail, prompt);
+        } catch (RuntimeException ex) {
+            if (isToolUseFailure(ex)) {
+                log.warn("Tool-call generation failed, retrying with plain chat model. conversationId={}, user={}", conversationId, userEmail, ex);
+                SplitwisePlainAgent plainAgent = getPlainAgent();
+                if (plainAgent != null) {
+                    return plainAgent.chat(userEmail, prompt);
+                }
+                throw ex;
+            }
+            if (isRateLimitFailure(ex)) {
+                throw new RuntimeException(buildRateLimitMessage(ex));
+            }
+            throw ex;
+        } finally {
+            AssistantUserContext.clear();
+        }
+    }
+
     private AssistantConversation getOrCreateConversation(String userEmail, String conversationId) {
         return assistantConversationRepository.findByIdAndUserEmail(conversationId, userEmail)
                 .orElseGet(() -> {
@@ -750,24 +899,29 @@ public class AssistantAgentService {
     interface SplitwiseChatAgent {
 
         @SystemMessage("""
-                You are Splitwise Assistant for a personal finance sharing app.
-                Keep responses concise, accurate, and grounded in tool outputs.
-                Prefer tools for user-specific financial data, but answer directly for chat-meta requests like previous/last question when history is available.
-                For write operations, call a prepare* tool first and clearly return confirmation token to the user.
-            If a transcript of previous turns is provided in the user message, treat it as reliable conversation memory.
-                Never fabricate balances, users, groups, or expenses.
-                """)
+            You are the Splitwise Assistant — an autonomous, user-friendly financial assistant for a shared expense app.
+            Always act autonomously: when a request requires data, call the appropriate tools yourself and answer with the results.
+            Never expose tool syntax, internal reasoning, planning notes, or backend details to the user.
+            If a user asks for spending summaries, recent expenses, analytics, totals, balances, category insights, group expenses, or trends, fetch data first, then respond.
+            For insights, trends, observations, patterns, analysis, summaries, or recommendations, do not repeat raw expense lists. Instead, provide concise, human-readable insights derived from the data.
+            Highlight balances, dominant categories/groups, unusual spending, recurring expenses, or debt patterns when relevant.
+            Use concise, natural responses with clear bullet points when helpful.
+            For write operations, follow the prepare+confirm pattern: prepare a pending action, return a confirmation token, and require explicit confirmation before executing.
+            Do not fabricate exact balances, users, groups, or expenses. If data is unavailable after tool calls, explain what is missing and suggest a helpful next step.
+            Respect privacy: never access or act on other users' data without explicit consent.
+            Use provided transcript as memory and keep responses focused on the user's request.
+            """)
         String chat(@MemoryId String conversationId, @UserMessage String message);
     }
 
     interface SplitwisePlainAgent {
 
         @SystemMessage("""
-                You are Splitwise Assistant for a personal finance sharing app.
-                Keep responses concise and helpful.
-                If user asks about previous questions, rely on provided transcript/history text and answer plainly.
-                Never fabricate balances, users, groups, or expenses.
-                """)
+            You are the Splitwise Assistant for a shared expense app. Be concise, proactive, and user-friendly.
+            Use tools for any user-specific data and never expose tool syntax or internal reasoning.
+            If data is unavailable after tool calls, explain what is missing and suggest the next helpful action.
+            Require explicit confirmation before executing any write operation.
+            """)
         String chat(@MemoryId String conversationId, @UserMessage String message);
     }
 }

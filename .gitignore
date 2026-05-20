@@ -45,6 +45,7 @@ hs_err_pid*
 .env.*
 src/main/resources/application-local.properties
 src/main/resources/application-secrets.properties
+src/main/resources/firebase/serviceAccountKey.json
 
 ### OS Files ###
 .DS_Store
