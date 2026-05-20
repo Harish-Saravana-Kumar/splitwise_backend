@@ -198,6 +198,33 @@ mvn spring-boot:run
 Server starts at: `http://localhost:8080`
 
 Swagger UI: `http://localhost:8080/swagger-ui/index.html`
+ 
+#### Build and Run JAR
+
+```bash
+mvn clean package -DskipTests
+java -jar target/splitwise-backend-0.0.1-SNAPSHOT.jar
+```
+
+#### Docker
+
+Build:
+```bash
+docker build -t splitwise-backend:latest .
+```
+
+Run:
+```bash
+docker run --env-file .env -p 8080:8080 splitwise-backend:latest
+```
+
+Ensure `.env` contains your DB and JWT secrets (do not commit it).
+
+#### Run Tests
+
+```bash
+mvn test
+```
 
 ---
 
