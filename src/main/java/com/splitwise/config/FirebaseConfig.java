@@ -12,6 +12,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.core.io.ClassPathResource;
+import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
 
 @Slf4j
@@ -58,6 +59,14 @@ public class FirebaseConfig {
     private Resource resolveServiceAccountResource() {
         if (serviceAccountPath.startsWith("classpath:")) {
             return new ClassPathResource(serviceAccountPath.substring("classpath:".length()));
+        }
+
+        if (serviceAccountPath.startsWith("file:")) {
+            return new FileSystemResource(serviceAccountPath.substring("file:".length()));
+        }
+
+        if (serviceAccountPath.startsWith("/") || serviceAccountPath.matches("^[A-Za-z]:[\\/].*")) {
+            return new FileSystemResource(serviceAccountPath);
         }
 
         return new ClassPathResource(serviceAccountPath);
