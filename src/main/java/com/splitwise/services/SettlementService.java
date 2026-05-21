@@ -61,11 +61,11 @@ public class SettlementService {
 
         // If receiverId is provided -> existing single-receiver settlement
         if (request.getReceiverId() != null) {
-            BigDecimal pendingAmount = balanceService.getPendingSettlementBetween(
+                BigDecimal pendingAmount = balanceService.getPendingSettlementBetween(
                     request.getGroupId(),
-                    request.getPayerId(),
-                    request.getReceiverId()
-            );
+                    request.getPayerId(), // payerId is treated as paidBy (collector)
+                    request.getReceiverId() // receiverId is the debtor
+                );
 
             if (pendingAmount.compareTo(BigDecimal.ZERO) == 0) {
                 throw new RuntimeException("Payer has no pending balance with the selected receiver in this group");
@@ -75,9 +75,10 @@ public class SettlementService {
             }
 
             BigDecimal remainingAmount = request.getAmount();
-            List<ExpenseSplit> payerUnsettledSplits = expenseSplitRepository.findByExpense_Group_Id(request.getGroupId()).stream()
-                    .filter(split -> split.getUser().getId().equals(request.getPayerId()))
-                    .filter(split -> split.getExpense().getPaidBy().getId().equals(request.getReceiverId()))
+                // Find splits where expense was paid by the payer (collector) and debtor is receiver
+                List<ExpenseSplit> payerUnsettledSplits = expenseSplitRepository.findByExpense_Group_Id(request.getGroupId()).stream()
+                    .filter(split -> split.getExpense().getPaidBy().getId().equals(request.getPayerId()))
+                    .filter(split -> split.getUser().getId().equals(request.getReceiverId()))
                     .filter(split -> !split.isSettled())
                     .sorted(Comparator
                             .comparing((ExpenseSplit split) -> split.getExpense().getCreatedAt(), Comparator.nullsLast(Comparator.naturalOrder()))

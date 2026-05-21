@@ -47,12 +47,13 @@ public class BalanceService {
     public BigDecimal getPendingSettlementBetween(Long groupId, Long payerId, Long receiverId) {
         List<ExpenseSplit> unsettledSplits = expenseSplitRepository.findByExpense_Group_Id(groupId);
 
+        // Interpret parameters as: payerId = paidBy (creditor), receiverId = debtor (owing user)
         return unsettledSplits.stream()
-                .filter(split -> !split.isSettled())
-                .filter(split -> split.getUser().getId().equals(payerId))
-                .filter(split -> split.getExpense().getPaidBy().getId().equals(receiverId))
-                .map(ExpenseSplit::getOwedAmount)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+            .filter(split -> !split.isSettled())
+            .filter(split -> split.getExpense().getPaidBy().getId().equals(payerId))
+            .filter(split -> split.getUser().getId().equals(receiverId))
+            .map(ExpenseSplit::getOwedAmount)
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
     public List<SettlementResponse> getMinimumSettlements(Long groupId) {
@@ -80,10 +81,11 @@ public class BalanceService {
             BalanceEntry debtor = debtors.getFirst();
             BigDecimal settleAmount = creditor.balance().min(debtor.balance());
 
-            suggestions.add(SettlementResponse.builder()
+                // Suggestion: payer = creditor (paid-by / is owed), receiver = debtor (owes money)
+                suggestions.add(SettlementResponse.builder()
                     .groupId(groupId)
-                    .payer(getUserResponseCached(debtor.userId(), userCache))
-                    .receiver(getUserResponseCached(creditor.userId(), userCache))
+                    .payer(getUserResponseCached(creditor.userId(), userCache))
+                    .receiver(getUserResponseCached(debtor.userId(), userCache))
                     .amount(settleAmount)
                     .settledAt(LocalDateTime.now())
                     .build());
