@@ -22,7 +22,7 @@ public class SettlementRequest {
     private Long payerId;
 
     @NotNull
-    private Long receiverId;
+    private Long receiverId; // optional: if null, treat as payer collecting across multiple receivers
 
     @NotNull
     @DecimalMin(value = "0.01")

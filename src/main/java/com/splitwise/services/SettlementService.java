@@ -59,61 +59,139 @@ public class SettlementService {
             throw new RuntimeException("Payer and receiver must be members of the group");
         }
 
-        BigDecimal pendingAmount = balanceService.getPendingSettlementBetween(
-                request.getGroupId(),
-                request.getPayerId(),
-                request.getReceiverId()
-        );
+        // If receiverId is provided -> existing single-receiver settlement
+        if (request.getReceiverId() != null) {
+            BigDecimal pendingAmount = balanceService.getPendingSettlementBetween(
+                    request.getGroupId(),
+                    request.getPayerId(),
+                    request.getReceiverId()
+            );
 
-        if (pendingAmount.compareTo(BigDecimal.ZERO) == 0) {
-            throw new RuntimeException("Payer has no pending balance with the selected receiver in this group");
-        }
-                if (request.getAmount().compareTo(pendingAmount) > 0) {
-                        throw new RuntimeException("Settlement amount cannot exceed pending balance between payer and receiver: " + pendingAmount);
-        }
+            if (pendingAmount.compareTo(BigDecimal.ZERO) == 0) {
+                throw new RuntimeException("Payer has no pending balance with the selected receiver in this group");
+            }
+            if (request.getAmount().compareTo(pendingAmount) > 0) {
+                throw new RuntimeException("Settlement amount cannot exceed pending balance between payer and receiver: " + pendingAmount);
+            }
 
-                BigDecimal remainingAmount = request.getAmount();
-                List<ExpenseSplit> payerUnsettledSplits = expenseSplitRepository.findByExpense_Group_Id(request.getGroupId()).stream()
-                                .filter(split -> split.getUser().getId().equals(request.getPayerId()))
-                                .filter(split -> split.getExpense().getPaidBy().getId().equals(request.getReceiverId()))
-                                .filter(split -> !split.isSettled())
-                                .sorted(Comparator
-                                                .comparing((ExpenseSplit split) -> split.getExpense().getCreatedAt(), Comparator.nullsLast(Comparator.naturalOrder()))
-                                                .thenComparing(ExpenseSplit::getId))
-                                .toList();
+            BigDecimal remainingAmount = request.getAmount();
+            List<ExpenseSplit> payerUnsettledSplits = expenseSplitRepository.findByExpense_Group_Id(request.getGroupId()).stream()
+                    .filter(split -> split.getUser().getId().equals(request.getPayerId()))
+                    .filter(split -> split.getExpense().getPaidBy().getId().equals(request.getReceiverId()))
+                    .filter(split -> !split.isSettled())
+                    .sorted(Comparator
+                            .comparing((ExpenseSplit split) -> split.getExpense().getCreatedAt(), Comparator.nullsLast(Comparator.naturalOrder()))
+                            .thenComparing(ExpenseSplit::getId))
+                    .toList();
 
-                if (payerUnsettledSplits.isEmpty()) {
-                        throw new RuntimeException("Payer has no pending balance with the selected receiver in this group");
+            if (payerUnsettledSplits.isEmpty()) {
+                throw new RuntimeException("Payer has no pending balance with the selected receiver in this group");
+            }
+
+            for (ExpenseSplit split : payerUnsettledSplits) {
+                if (remainingAmount.compareTo(BigDecimal.ZERO) <= 0) {
+                    break;
                 }
 
-                for (ExpenseSplit split : payerUnsettledSplits) {
-                        if (remainingAmount.compareTo(BigDecimal.ZERO) <= 0) {
-                                break;
-                        }
-
-                        BigDecimal updatedAmount = split.getOwedAmount().subtract(remainingAmount);
-                        if (updatedAmount.compareTo(BigDecimal.ZERO) > 0) {
-                                split.setOwedAmount(updatedAmount);
-                                remainingAmount = BigDecimal.ZERO;
-                        } else {
-                                split.setOwedAmount(BigDecimal.ZERO);
-                                split.setSettled(true);
-                                remainingAmount = updatedAmount.abs();
-                        }
+                BigDecimal updatedAmount = split.getOwedAmount().subtract(remainingAmount);
+                if (updatedAmount.compareTo(BigDecimal.ZERO) > 0) {
+                    split.setOwedAmount(updatedAmount);
+                    remainingAmount = BigDecimal.ZERO;
+                } else {
+                    split.setOwedAmount(BigDecimal.ZERO);
+                    split.setSettled(true);
+                    remainingAmount = updatedAmount.abs();
                 }
+            }
 
-                expenseSplitRepository.saveAll(payerUnsettledSplits);
+            expenseSplitRepository.saveAll(payerUnsettledSplits);
 
-                Settlement settlement = Settlement.builder()
-                                .group(group)
-                                .payer(payer)
-                                .receiver(receiver)
-                                .amount(request.getAmount())
-                                .settledAt(LocalDateTime.now())
-                                .build();
-                Settlement savedSettlement = settlementRepository.save(settlement);
+            Settlement settlement = Settlement.builder()
+                    .group(group)
+                    .payer(payer)
+                    .receiver(receiver)
+                    .amount(request.getAmount())
+                    .settledAt(LocalDateTime.now())
+                    .build();
+            Settlement savedSettlement = settlementRepository.save(settlement);
 
-        return mapToSettlementResponse(savedSettlement);
+            return mapToSettlementResponse(savedSettlement);
+        }
+
+        // Multi-receiver collection: payer collects amount from multiple debtors who owe to this payer
+        BigDecimal totalPending = expenseSplitRepository.findByExpense_Group_Id(request.getGroupId()).stream()
+                .filter(split -> !split.isSettled())
+                .filter(split -> split.getExpense().getPaidBy().getId().equals(request.getPayerId()))
+                .filter(split -> !split.getUser().getId().equals(request.getPayerId()))
+                .map(ExpenseSplit::getOwedAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        if (totalPending.compareTo(BigDecimal.ZERO) == 0) {
+            throw new RuntimeException("Payer has no pending balances to collect in this group");
+        }
+
+        if (request.getAmount().compareTo(totalPending) > 0) {
+            throw new RuntimeException("Settlement amount cannot exceed total pending balance for payer: " + totalPending);
+        }
+
+        BigDecimal remaining = request.getAmount();
+
+        // Sort unsettled splits (oldest first) and apply payments across them
+        List<ExpenseSplit> unsettled = expenseSplitRepository.findByExpense_Group_Id(request.getGroupId()).stream()
+                .filter(split -> !split.isSettled())
+                .filter(split -> split.getExpense().getPaidBy().getId().equals(request.getPayerId()))
+                .filter(split -> !split.getUser().getId().equals(request.getPayerId()))
+                .sorted(Comparator
+                        .comparing((ExpenseSplit split) -> split.getExpense().getCreatedAt(), Comparator.nullsLast(Comparator.naturalOrder()))
+                        .thenComparing(ExpenseSplit::getId))
+                .toList();
+
+        // Accumulate amounts applied per debtor
+        java.util.Map<Long, BigDecimal> appliedPerDebtor = new java.util.HashMap<>();
+
+        for (ExpenseSplit split : unsettled) {
+            if (remaining.compareTo(BigDecimal.ZERO) <= 0) break;
+
+            BigDecimal owed = split.getOwedAmount();
+            if (owed.compareTo(BigDecimal.ZERO) <= 0) continue;
+
+            if (remaining.compareTo(owed) >= 0) {
+                // fully settle this split
+                split.setOwedAmount(BigDecimal.ZERO);
+                split.setSettled(true);
+                remaining = remaining.subtract(owed);
+                appliedPerDebtor.merge(split.getUser().getId(), owed, BigDecimal::add);
+            } else {
+                // partially settle
+                BigDecimal newOwed = owed.subtract(remaining);
+                split.setOwedAmount(newOwed);
+                appliedPerDebtor.merge(split.getUser().getId(), remaining, BigDecimal::add);
+                remaining = BigDecimal.ZERO;
+            }
+        }
+
+        expenseSplitRepository.saveAll(unsettled);
+
+        // Create settlement records per debtor for applied amounts
+        java.util.List<Settlement> created = new java.util.ArrayList<>();
+        for (var entry : appliedPerDebtor.entrySet()) {
+            Long debtorId = entry.getKey();
+            BigDecimal applied = entry.getValue();
+            User debtor = userRepository.findById(debtorId).orElseThrow(() -> new RuntimeException("User not found"));
+
+            Settlement s = Settlement.builder()
+                    .group(group)
+                    .payer(payer) // initiator (collector)
+                    .receiver(debtor)
+                    .amount(applied)
+                    .settledAt(LocalDateTime.now())
+                    .build();
+            created.add(s);
+        }
+
+        // Save all settlement records and return the first one as response (existing API shape)
+        java.util.List<Settlement> saved = settlementRepository.saveAll(created);
+        return mapToSettlementResponse(saved.get(0));
     }
 
     public List<SettlementResponse> getSettlementsByGroup(Long groupId) {
@@ -124,7 +202,7 @@ public class SettlementService {
     }
 
     private void validateSettlementRequest(SettlementRequest request) {
-        if (request.getPayerId().equals(request.getReceiverId())) {
+        if (request.getReceiverId() != null && request.getPayerId().equals(request.getReceiverId())) {
             throw new RuntimeException("Payer and receiver cannot be the same user");
         }
         if (request.getAmount() == null || request.getAmount().compareTo(BigDecimal.ZERO) <= 0) {
