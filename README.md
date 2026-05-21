@@ -156,6 +156,33 @@ jwt.expiration=86400000
 
 server.port=8080
 
+## Render deployment
+
+### Backend environment variables
+
+Set these in the Render service:
+
+- `SPRING_DATASOURCE_URL`
+- `SPRING_DATASOURCE_USERNAME`
+- `SPRING_DATASOURCE_PASSWORD`
+- `JWT_SECRET`
+- `APP_CORS_ALLOWED_ORIGINS`
+- `FIREBASE_SERVICE_ACCOUNT_PATH`
+- `APP_MAIL_FROM`
+- `SPRING_MAIL_USERNAME`
+- `SPRING_MAIL_PASSWORD`
+
+### Required values
+
+- `SPRING_DATASOURCE_URL` should point to the Neon PostgreSQL JDBC URL.
+- `JWT_SECRET` should be a long random secret string.
+- `APP_CORS_ALLOWED_ORIGINS` should include your deployed frontend URL, for example `https://your-frontend.onrender.com`.
+- `FIREBASE_SERVICE_ACCOUNT_PATH` should point to the Firebase service account file path on Render, if you use a secret file.
+
+### Health endpoint
+
+The backend exposes `/actuator/health` for container health checks.
+
 # Assistant (Groq/OpenAI-compatible)
 assistant.enabled=true
 assistant.provider=groq

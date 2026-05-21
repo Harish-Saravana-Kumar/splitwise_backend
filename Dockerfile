@@ -1,27 +1,32 @@
 ## Multi-stage Dockerfile for splitwise-backend (Render-ready)
-## Usage: docker build --build-arg JAVA_VERSION=17 -t splitwise-backend:latest .
+## Usage: docker build --build-arg JAVA_VERSION=25 -t splitwise-backend:latest .
 
-ARG JAVA_VERSION=17
+ARG JAVA_VERSION=25
 
-FROM maven:3.10.1-eclipse-temurin-${JAVA_VERSION} AS build
+# Use Eclipse Temurin JDK for the build stage and rely on the project's mvnw wrapper
+FROM eclipse-temurin:${JAVA_VERSION}-jdk AS build
 WORKDIR /workspace
 
-# Copy files needed for dependency resolution first to leverage Docker cache
-COPY pom.xml mvnw mvnw.cmd ./
+# Copy wrapper and pom first to leverage Docker cache for downloads
+COPY mvnw mvnw.cmd pom.xml ./
 COPY .mvn .mvn
 
-# Download dependencies (offline) to cache layers
-RUN mvn -B -DskipTests dependency:go-offline
-
-# Copy the rest of the project and build
+# Copy source and run the Maven wrapper to build the project
 COPY . .
-RUN mvn -B -DskipTests package -DskipTests
+# Ensure the mvnw is executable and run the build
+RUN chmod +x ./mvnw
+RUN ./mvnw -B -DskipTests package
 
-FROM eclipse-temurin:${JAVA_VERSION}-jre-jammy AS runtime
+FROM eclipse-temurin:${JAVA_VERSION}-jdk-jammy AS runtime
 WORKDIR /app
 
 # Create non-root user
 RUN useradd --create-home --shell /bin/false appuser || true
+
+# Install curl for the container healthcheck
+RUN apt-get update \
+	&& apt-get install -y --no-install-recommends curl \
+	&& rm -rf /var/lib/apt/lists/*
 
 # Copy jar from build stage
 COPY --from=build /workspace/target/*.jar /app/app.jar
